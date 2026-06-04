@@ -192,23 +192,22 @@
     <div class="panel">
         <h2>⚙️ 辩论室配置</h2>
 
-        <label>DeepSeek API Key</label>
+        <label>DeepSeek API Key（逻辑纠察）</label>
         <input type="password" id="key-deepseek" placeholder="sk-...">
 
-        <label>豆包 API Key (火山引擎)</label>
+        <label>豆包 API Key（流量雷达）</label>
         <input type="password" id="key-doubao" placeholder="火山引擎 API Key">
 
-        <!-- 新增：豆包模型接入点 ID -->
         <label>豆包模型接入点 ID</label>
         <input type="text" id="doubao-model-id" placeholder="ark-xxxxxxxxxxxx">
 
-        <label>Kimi (月之暗面) API Key</label>
-        <input type="password" id="key-kimi" placeholder="sk-...">
+        <label>DeepSeek API Key（人文显微镜）</label>
+        <input type="password" id="key-deepseek2" placeholder="sk-...（可填同一个Key）">
 
-        <label>通义千问 (百炼) API Key</label>
+        <label>通义千问 API Key（人间嘴替）</label>
         <input type="password" id="key-qwen" placeholder="sk-...">
 
-        <label>智谱清言 API Key</label>
+        <label>智谱清言 API Key（专业抬杠）</label>
         <input type="password" id="key-zhipu" placeholder="...">
 
         <button class="btn btn-save" onclick="saveKeys()">💾 保存配置</button>
@@ -238,12 +237,12 @@
             let debateRunning = false;
             let stopFlag = false;
             let chatHistory = [];
-            const MODEL_LIST = ['deepseek', 'doubao', 'kimi', 'qwen', 'zhipu'];
+            const MODEL_LIST = ['deepseek', 'doubao', 'deepseek2', 'qwen', 'zhipu'];
 
             const MODEL_NAMES = {
                 deepseek: 'DeepSeek · 逻辑纠察',
                 doubao: '豆包 · 流量雷达',
-                kimi: 'Kimi · 人文显微镜',
+                deepseek2: 'DeepSeek · 人文显微镜',
                 qwen: '通义千问 · 人间嘴替',
                 zhipu: '智谱 · 专业抬杠'
             };
@@ -251,7 +250,7 @@
             const MODEL_COLORS = {
                 deepseek: '#4caf50',
                 doubao: '#2196f3',
-                kimi: '#ff9800',
+                deepseek2: '#ff9800',
                 qwen: '#9c27b0',
                 zhipu: '#f44336'
             };
@@ -282,12 +281,12 @@
             const PERSONAS = {
                 deepseek: '你是"逻辑纠察队队长"。你坚信影视作品的根基是叙事逻辑和人物行为动机的合理性。你对剧情漏洞、人设崩塌有生理性厌恶。你的选题永远指向"这个故事本身说得圆吗"。',
                 doubao: '你是"流量雷达探测器"。你只看数据，不在乎艺术高度。你的大脑就是抖音算法的模拟器，对社会情绪、大众痛点、阶层议题极度敏感。你的选题永远指向"这个能不能火"。',
-                kimi: '你是"人文显微镜操作员"。你专注长尾深度内容，武器是考据、隐喻解读、镜头语言分析、历史/文化背景钩沉。你的选题让人看完觉得"涨知识了"。',
+                deepseek2: '你是"人文显微镜操作员"。你专注长尾深度内容，武器是考据、隐喻解读、镜头语言分析、历史/文化背景钩沉。你的选题让人看完觉得"涨知识了"。你的发言风格偏沉稳、博学，用别人没注意到的细节推翻他人的观点。',
                 qwen: '你是"人间清醒嘴替"。你擅长从角色关系、情感困境、生活细节中提炼出能让观众瞬间共鸣的人生真相。你相信观众点赞的动机是"这说的不就是我吗"。',
                 zhipu: '你是"专业抬杠运动员"。你的天职是质疑一切主流观点。你必须为少数派发声，但抬杠必须有证据，不能为了反对而反对。'
             };
 
-            // 保存所有配置（包括豆包接入点ID）
+            // 保存所有配置
             window.saveKeys = function() {
                 MODEL_LIST.forEach(model => {
                     const input = document.getElementById('key-' + model);
@@ -295,7 +294,6 @@
                         localStorage.setItem('debate_key_' + model, input.value.trim());
                     }
                 });
-                // 单独保存豆包模型接入点ID
                 const doubaoModelInput = document.getElementById('doubao-model-id');
                 if (doubaoModelInput && doubaoModelInput.value.trim()) {
                     localStorage.setItem('doubao_model_id', doubaoModelInput.value.trim());
@@ -320,7 +318,6 @@
                 return localStorage.getItem('debate_key_' + model) || '';
             };
 
-            // 获取豆包专用模型ID
             function getDoubaoModelId() {
                 const input = document.getElementById('doubao-model-id');
                 if (input && input.value.trim()) return input.value.trim();
@@ -424,13 +421,12 @@
                     doubao: {
                         url: 'https://ark.cn-beijing.volces.com/api/v3/chat/completions',
                         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
-                        // 关键：豆包的 model 从输入框获取，不再硬编码
                         body: { model: getDoubaoModelId() || 'doubao-lite', messages, stream: false, max_tokens: 600, temperature: 0.85 }
                     },
-                    kimi: {
-                        url: 'https://api.moonshot.cn/v1/chat/completions',
+                    deepseek2: {
+                        url: 'https://api.deepseek.com/v1/chat/completions',
                         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
-                        body: { model: 'moonshot-v1-8k', messages, stream: false, max_tokens: 600, temperature: 0.85 }
+                        body: { model: 'deepseek-chat', messages, stream: false, max_tokens: 600, temperature: 0.85 }
                     },
                     qwen: {
                         url: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
