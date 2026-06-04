@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>影视选题辩论室</title>
+    <title>影视选题辩论室 V2</title>
     <style>
         :root {
             --bg: #1a1a2e;
@@ -26,7 +26,7 @@
         }
         .panel {
             width: 25%;
-            min-width: 260px;
+            min-width: 280px;
             background: var(--panel-bg);
             padding: 20px 16px;
             display: flex;
@@ -60,9 +60,11 @@
         .btn-save { background: var(--accent); color: #fff; }
         .btn-stop { background: #ff6b6b; color: #fff; }
         .btn-clear { background: #444; color: #fff; }
+        .btn-next { background: #4caf50; color: #fff; }
         .btn-save:hover { opacity: 0.85; }
         .btn-stop:hover { opacity: 0.85; }
         .btn-clear:hover { opacity: 0.85; }
+        .btn-next:hover { opacity: 0.85; }
         .status {
             font-size: 12px;
             text-align: center;
@@ -72,6 +74,7 @@
         }
         .status.idle { color: #aaa; }
         .status.running { color: #4caf50; animation: pulse 1.5s infinite; }
+        .status.paused { color: #ffa500; }
         .status.stopped { color: #ff6b6b; }
         @keyframes pulse {
             0%, 100% { opacity: 1; }
@@ -171,6 +174,15 @@
         }
         .user-intervene input:focus { border-color: var(--accent); }
         .btn-send { background: var(--accent); color: #fff; }
+        .next-round-hint {
+            text-align: center;
+            color: #ffa500;
+            font-size: 12px;
+            padding: 8px;
+            margin-top: 8px;
+            border: 1px dashed #ffa500;
+            border-radius: 6px;
+        }
         @media (max-width: 768px) {
             body { flex-direction: column; }
             .panel {
@@ -190,7 +202,7 @@
 </head>
 <body>
     <div class="panel">
-        <h2>⚙️ 辩论室配置</h2>
+        <h2>⚙️ 辩论室配置 V2</h2>
 
         <label>DeepSeek API Key（逻辑纠察）</label>
         <input type="password" id="key-deepseek" placeholder="sk-...">
@@ -212,8 +224,10 @@
 
         <button class="btn btn-save" onclick="saveKeys()">💾 保存配置</button>
         <button class="btn btn-stop" onclick="stopDebate()">⏹️ 停止辩论</button>
+        <button class="btn btn-next" onclick="startNextRound()">▶️ 继续下一轮</button>
         <button class="btn btn-clear" onclick="clearChat()">🗑️ 清空对话</button>
         <div class="status idle" id="status-indicator">● 空闲</div>
+        <div class="next-round-hint" id="next-hint" style="display:none;">💡 辩论已暂停，等待你的指令。<br>你可以直接插话，然后点击“继续下一轮”。</div>
     </div>
 
     <div class="main">
@@ -223,11 +237,11 @@
         </div>
         <div class="chat-area" id="chat-area">
             <div style="text-align:center;color:#666;margin-top:60px;font-size:14px;">
-                📺 影视选题辩论室<br><span style="font-size:12px;">粘贴资料 → 点击开始辩论 → 围观AI脑暴</span>
+                📺 影视选题辩论室 V2<br><span style="font-size:12px;">粘贴资料 → 开始辩论 → 每轮结束等待你插话 → 点“继续下一轮”</span>
             </div>
         </div>
         <div class="user-intervene" style="padding:10px 16px;border-top:1px solid var(--border);background:var(--panel-bg);">
-            <input type="text" id="user-intervene-input" placeholder="随时插话引导辩论方向..." onkeydown="if(event.key==='Enter')sendIntervene()">
+            <input type="text" id="user-intervene-input" placeholder="在此输入插话指令，回车发送..." onkeydown="if(event.key==='Enter')sendIntervene()">
             <button class="btn btn-send" onclick="sendIntervene()">发送</button>
         </div>
     </div>
@@ -236,6 +250,8 @@
         (function() {
             let debateRunning = false;
             let stopFlag = false;
+            let isPaused = false;
+            let currentRound = 0;
             let chatHistory = [];
             const MODEL_LIST = ['deepseek', 'doubao', 'deepseek2', 'qwen', 'zhipu'];
 
@@ -256,6 +272,11 @@
             };
 
             const SYSTEM_PROMPT = `你是一个影视解说选题策划智囊团的成员。你参与一场多人的选题辩论会，你和另外4位AI角色正在一个群聊中讨论。
+            
+            ## 核心规则（必须无条件遵守）
+            1. 用户是辩论主持人，拥有绝对控制权。
+            2. 如果用户在聊天记录中插入了新的指令（以“【插话】”开头的内容），你必须优先响应这个新指令。
+            3. 禁止忽略用户的插话，也禁止只是简单同意然后继续自己原来的话题。
 
             ## 你的角色人设
             [此处在实际调用时会被替换为各模型对应的人设]
@@ -266,25 +287,29 @@
             3. 任何质疑或反驳，必须附带具体的证据引用（来自用户提供的资料或影视情节）。无证据的纯抬杠无效。
 
             ## 辩论规则
-            1. 第一轮：基于用户提供的资料，结合你的人设，各自提出一个爆款选题方向。选题必须是一个可以用"一句话钩子"表达的明确观点，不是泛泛的主题。
-            2. 从第二轮开始：你必须仔细阅读群内所有其他成员的发言，并对他们的观点进行点评、质疑、反驳或补充。
-            3. 禁止简单同意。如果你同意某人的观点，必须提供全新的论据支撑，否则视为无效发言。
-            4. 禁止跑题。始终围绕用户提供的影视资料和选题展开。
-            5. 如果没有收到用户的停止指令，辩论必须持续进行。每轮发言后，你应当以新的角度继续推进讨论。
+            1. 第一轮：基于用户提供的资料，结合你的人设，各自提出一个爆款选题方向。
+            2. 从第二轮开始：仔细阅读所有发言，并点评、质疑、反驳或补充。
+            3. 禁止简单同意。如果同意，必须提供全新的论据支撑。
+            4. 禁止跑题。始终围绕用户的资料和指令展开。
 
             ## 输出要求
-            - 你的每条发言应当简洁有力，控制在200字以内（但论证充分时允许超过）。
             - 语言风格要符合你的人设，保持辩论的张力。
-            - 如果你是第一轮发言，输出格式为：【选题方向】+ 你的选题钩子 + 简短理由。
-            - 如果你不是第一轮发言，先表明你的态度（同意/反对/补充），再给出你的论据。`;
+            - 如果是第一轮发言，输出：【选题方向】+ 你的选题钩子 + 简短理由。
+            - 如果不是第一轮，先表明态度（同意/反对/补充），再给出论据。`;
 
             const PERSONAS = {
-                deepseek: '你是"逻辑纠察队队长"。你坚信影视作品的根基是叙事逻辑和人物行为动机的合理性。你对剧情漏洞、人设崩塌有生理性厌恶。你的选题永远指向"这个故事本身说得圆吗"。',
-                doubao: '你是"流量雷达探测器"。你只看数据，不在乎艺术高度。你的大脑就是抖音算法的模拟器，对社会情绪、大众痛点、阶层议题极度敏感。你的选题永远指向"这个能不能火"。',
-                deepseek2: '你是"人文显微镜操作员"。你专注长尾深度内容，武器是考据、隐喻解读、镜头语言分析、历史/文化背景钩沉。你的选题让人看完觉得"涨知识了"。你的发言风格偏沉稳、博学，用别人没注意到的细节推翻他人的观点。',
-                qwen: '你是"人间清醒嘴替"。你擅长从角色关系、情感困境、生活细节中提炼出能让观众瞬间共鸣的人生真相。你相信观众点赞的动机是"这说的不就是我吗"。',
-                zhipu: '你是"专业抬杠运动员"。你的天职是质疑一切主流观点。你必须为少数派发声，但抬杠必须有证据，不能为了反对而反对。'
+                deepseek: '你是"逻辑纠察队队长"。坚信影视作品的根基是叙事逻辑和人物行为动机的合理性。你的选题永远指向"这个故事本身说得圆吗"。',
+                doubao: '你是"流量雷达探测器"。你的大脑就是抖音算法的模拟器，对社会情绪、大众痛点极度敏感。你的选题永远指向"这个能不能火"。',
+                deepseek2: '你是"人文显微镜操作员"。你专注考据、隐喻解读、镜头语言分析。你的选题让人看完觉得"涨知识了"。',
+                qwen: '你是"人间清醒嘴替"。你擅长从角色关系、情感困境中提炼出能让观众共鸣的人生真相。',
+                zhipu: '你是"专业抬杠运动员"。你的天职是质疑一切主流观点，为少数派发声，但必须有证据。'
             };
+
+            // ============ UI辅助函数 ============
+            function showHint(show) {
+                const hint = document.getElementById('next-hint');
+                if (hint) hint.style.display = show ? 'block' : 'none';
+            }
 
             window.saveKeys = function() {
                 MODEL_LIST.forEach(model => {
@@ -325,8 +350,8 @@
 
             window.clearChat = function() {
                 chatHistory = [];
-                const area = document.getElementById('chat-area');
-                if (area) area.innerHTML = '<div style="text-align:center;color:#666;margin-top:60px;font-size:14px;">📺 影视选题辩论室<br><span style="font-size:12px;">粘贴资料 → 点击开始辩论 → 围观AI脑暴</span></div>';
+                document.getElementById('chat-area').innerHTML = '<div style="text-align:center;color:#666;margin-top:60px;font-size:14px;">📺 影视选题辩论室 V2<br><span style="font-size:12px;">粘贴资料 → 开始辩论 → 每轮结束等待你插话 → 点“继续下一轮”</span></div>';
+                showHint(false);
             };
 
             window.setStatus = function(state) {
@@ -335,6 +360,7 @@
                 el.className = 'status ' + state;
                 if (state === 'idle') el.textContent = '● 空闲';
                 if (state === 'running') el.textContent = '● 辩论中...';
+                if (state === 'paused') el.textContent = '⏸️ 等待指令';
                 if (state === 'stopped') el.textContent = '● 已停止';
             };
 
@@ -343,7 +369,6 @@
                 if (!area) return;
                 const row = document.createElement('div');
                 row.className = 'msg-row';
-
                 const avatar = document.createElement('div');
                 avatar.className = 'avatar';
                 if (role === 'user') {
@@ -353,12 +378,10 @@
                     avatar.style.background = MODEL_COLORS[model] || '#666';
                     avatar.textContent = MODEL_NAMES[model] ? MODEL_NAMES[model].charAt(0) : '?';
                 }
-
                 const body = document.createElement('div');
                 body.className = 'msg-body';
                 if (role === 'user') body.classList.add('user');
                 if (isError) body.classList.add('msg-error');
-
                 const meta = document.createElement('div');
                 meta.className = 'msg-meta';
                 const nameSpan = document.createElement('span');
@@ -368,18 +391,15 @@
                 timeSpan.textContent = new Date().toLocaleTimeString();
                 meta.appendChild(nameSpan);
                 meta.appendChild(timeSpan);
-
                 const contentDiv = document.createElement('div');
                 contentDiv.className = 'msg-content';
                 contentDiv.textContent = content;
-
                 body.appendChild(meta);
                 body.appendChild(contentDiv);
                 row.appendChild(avatar);
                 row.appendChild(body);
                 area.appendChild(row);
                 area.scrollTop = area.scrollHeight;
-
                 if (!isError) {
                     chatHistory.push({ role, model, content, time: new Date().toISOString() });
                 }
@@ -401,16 +421,16 @@
             window.stopDebate = function() {
                 stopFlag = true;
                 debateRunning = false;
+                isPaused = false;
                 window.setStatus('stopped');
+                showHint(false);
                 window.addMessage('system', null, '⏹️ 辩论已停止', false);
             };
 
+            // ============ API调用 ============
             async function callModelAPI(model, messages) {
                 const apiKey = window.getKey(model);
-                if (!apiKey) {
-                    return { error: model + ' 未配置API Key' };
-                }
-
+                if (!apiKey) return { error: model + ' 未配置API Key' };
                 const configs = {
                     deepseek: {
                         url: 'https://api.deepseek.com/v1/chat/completions',
@@ -438,10 +458,8 @@
                         body: { model: 'glm-4-flash', messages, stream: false, max_tokens: 600, temperature: 0.85 }
                     }
                 };
-
                 const cfg = configs[model];
                 if (!cfg) return { error: '未知模型: ' + model };
-
                 try {
                     const resp = await fetch(cfg.url, {
                         method: 'POST',
@@ -458,37 +476,26 @@
                 }
             }
 
-            window.startDebate = async function() {
-                const materialInput = document.getElementById('material-input');
-                if (!materialInput) return;
-                const material = materialInput.value.trim();
-                if (!material) {
-                    alert('请先粘贴影视资料');
-                    return;
-                }
-                if (debateRunning) {
-                    alert('辩论正在进行中，请先停止');
-                    return;
-                }
-
-                stopFlag = false;
-                debateRunning = true;
-                window.setStatus('running');
-
-                window.addUserMessage('📋 以下为本次辩论资料：\n' + (material.length > 500 ? material.substring(0, 500) + '...' : material));
-
-                const userMaterialMsg = '以下是一份影视作品的观众评论和讨论资料，请仔细阅读：\n\n' + material + '\n\n请基于以上资料，结合你的人设，提出一个爆款选题方向。';
-
+            // ============ 核心：单轮辩论 ============
+            async function runSingleRound(roundNumber) {
                 for (const model of MODEL_LIST) {
                     if (stopFlag) break;
                     const persona = PERSONAS[model] || '';
                     const systemPrompt = SYSTEM_PROMPT.replace('[此处在实际调用时会被替换为各模型对应的人设]', persona);
-
-                    const msgs = [
-                        { role: 'system', content: systemPrompt },
-                        { role: 'user', content: userMaterialMsg }
-                    ];
-
+                    const msgs = [{ role: 'system', content: systemPrompt }];
+                    for (const h of chatHistory) {
+                        if (h.role === 'user') {
+                            msgs.push({ role: 'user', content: h.content });
+                        } else if (h.role === 'ai') {
+                            const label = MODEL_NAMES[h.model] || h.model;
+                            msgs.push({ role: 'assistant', content: '[' + label + ']: ' + h.content });
+                        }
+                    }
+                    if (roundNumber === 1) {
+                        msgs.push({ role: 'user', content: '（第一轮辩论：请基于用户提供的资料，提出一个爆款选题方向。）' });
+                    } else {
+                        msgs.push({ role: 'user', content: '（第' + roundNumber + '轮辩论：请继续发言，点评、质疑或补充。如果用户有新的插话指令，请优先响应。）' });
+                    }
                     const result = await callModelAPI(model, msgs);
                     if (result.error) {
                         window.addMessage('ai', model, '❌ ' + result.error, true);
@@ -497,50 +504,56 @@
                     }
                     await new Promise(r => setTimeout(r, 800));
                 }
+            }
 
-                let round = 1;
-                const MAX_ROUNDS = 20;
-                while (!stopFlag && round < MAX_ROUNDS) {
-                    round++;
-                    await new Promise(r => setTimeout(r, 2000));
-
-                    for (const model of MODEL_LIST) {
-                        if (stopFlag) break;
-                        const persona = PERSONAS[model] || '';
-                        const systemPrompt = SYSTEM_PROMPT.replace('[此处在实际调用时会被替换为各模型对应的人设]', persona);
-
-                        const msgs = [{ role: 'system', content: systemPrompt }];
-                        for (const h of chatHistory) {
-                            if (h.role === 'user') {
-                                msgs.push({ role: 'user', content: h.content });
-                            } else if (h.role === 'ai') {
-                                const label = MODEL_NAMES[h.model] || h.model;
-                                msgs.push({ role: 'assistant', content: '[' + label + ']: ' + h.content });
-                            }
-                        }
-                        msgs.push({
-                            role: 'user',
-                            content: '（这是第' + round + '轮辩论。请继续发言：点评、质疑或补充其他成员的观点。如果你没有新的角度，可以从另一个侧面深化已有讨论。禁止简单同意。）'
-                        });
-
-                        const result = await callModelAPI(model, msgs);
-                        if (result.error) {
-                            window.addMessage('ai', model, '❌ ' + result.error, true);
-                        } else if (result.content) {
-                            window.addMessage('ai', model, result.content, false);
-                        }
-                        await new Promise(r => setTimeout(r, 800));
-                    }
+            // ============ 开始辩论 ============
+            window.startDebate = async function() {
+                const materialInput = document.getElementById('material-input');
+                if (!materialInput) return;
+                const material = materialInput.value.trim();
+                if (!material) { alert('请先粘贴影视资料'); return; }
+                if (debateRunning) { alert('辩论正在进行中'); return; }
+                stopFlag = false;
+                debateRunning = true;
+                isPaused = false;
+                currentRound = 0;
+                window.setStatus('running');
+                window.addUserMessage('📋 资料：' + (material.length > 500 ? material.substring(0, 500) + '...' : material));
+                const userMaterialMsg = '以下是一份影视作品的观众评论和讨论资料，请仔细阅读：\n\n' + material + '\n\n请基于以上资料，结合你的人设，提出一个爆款选题方向。';
+                window.addUserMessage(userMaterialMsg);
+                // 第一轮
+                currentRound = 1;
+                await runSingleRound(currentRound);
+                if (!stopFlag) {
+                    isPaused = true;
+                    window.setStatus('paused');
+                    showHint(true);
                 }
+            };
 
-                debateRunning = false;
-                if (!stopFlag) window.setStatus('idle');
-                window.addMessage('system', null, '🏁 本轮辩论结束。可继续粘贴新资料或发送指令引导下一轮。', false);
+            // ============ 继续下一轮 ============
+            window.startNextRound = async function() {
+                if (!debateRunning || !isPaused) {
+                    alert('辩论未在暂停状态');
+                    return;
+                }
+                if (stopFlag) return;
+                isPaused = false;
+                showHint(false);
+                window.setStatus('running');
+                currentRound++;
+                await runSingleRound(currentRound);
+                if (!stopFlag) {
+                    isPaused = true;
+                    window.setStatus('paused');
+                    showHint(true);
+                }
             };
 
             window.onload = function() {
                 window.loadKeys();
                 window.clearChat();
+                showHint(false);
             };
         })();
     </script>
