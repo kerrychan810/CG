@@ -191,21 +191,32 @@
 <body>
     <div class="panel">
         <h2>⚙️ 辩论室配置</h2>
+
         <label>DeepSeek API Key</label>
         <input type="password" id="key-deepseek" placeholder="sk-...">
-        <label>豆包 (火山引擎) API Key</label>
-        <input type="password" id="key-doubao" placeholder="...">
+
+        <label>豆包 API Key (火山引擎)</label>
+        <input type="password" id="key-doubao" placeholder="火山引擎 API Key">
+
+        <!-- 新增：豆包模型接入点 ID -->
+        <label>豆包模型接入点 ID</label>
+        <input type="text" id="doubao-model-id" placeholder="ark-xxxxxxxxxxxx">
+
         <label>Kimi (月之暗面) API Key</label>
         <input type="password" id="key-kimi" placeholder="sk-...">
+
         <label>通义千问 (百炼) API Key</label>
         <input type="password" id="key-qwen" placeholder="sk-...">
+
         <label>智谱清言 API Key</label>
         <input type="password" id="key-zhipu" placeholder="...">
+
         <button class="btn btn-save" onclick="saveKeys()">💾 保存配置</button>
         <button class="btn btn-stop" onclick="stopDebate()">⏹️ 停止辩论</button>
         <button class="btn btn-clear" onclick="clearChat()">🗑️ 清空对话</button>
         <div class="status idle" id="status-indicator">● 空闲</div>
     </div>
+
     <div class="main">
         <div class="input-area">
             <textarea id="material-input" placeholder="在此粘贴豆瓣/B站/知乎资料..."></textarea>
@@ -221,6 +232,7 @@
             <button class="btn btn-send" onclick="sendIntervene()">发送</button>
         </div>
     </div>
+
     <script>
         (function() {
             let debateRunning = false;
@@ -275,6 +287,7 @@
                 zhipu: '你是"专业抬杠运动员"。你的天职是质疑一切主流观点。你必须为少数派发声，但抬杠必须有证据，不能为了反对而反对。'
             };
 
+            // 保存所有配置（包括豆包接入点ID）
             window.saveKeys = function() {
                 MODEL_LIST.forEach(model => {
                     const input = document.getElementById('key-' + model);
@@ -282,7 +295,12 @@
                         localStorage.setItem('debate_key_' + model, input.value.trim());
                     }
                 });
-                alert('✅ API Key 已保存到本地浏览器');
+                // 单独保存豆包模型接入点ID
+                const doubaoModelInput = document.getElementById('doubao-model-id');
+                if (doubaoModelInput && doubaoModelInput.value.trim()) {
+                    localStorage.setItem('doubao_model_id', doubaoModelInput.value.trim());
+                }
+                alert('✅ 所有配置已保存');
             };
 
             window.loadKeys = function() {
@@ -291,6 +309,9 @@
                     const input = document.getElementById('key-' + model);
                     if (saved && input) input.value = saved;
                 });
+                const doubaoModelSaved = localStorage.getItem('doubao_model_id');
+                const doubaoModelInput = document.getElementById('doubao-model-id');
+                if (doubaoModelSaved && doubaoModelInput) doubaoModelInput.value = doubaoModelSaved;
             };
 
             window.getKey = function(model) {
@@ -298,6 +319,13 @@
                 if (input && input.value.trim()) return input.value.trim();
                 return localStorage.getItem('debate_key_' + model) || '';
             };
+
+            // 获取豆包专用模型ID
+            function getDoubaoModelId() {
+                const input = document.getElementById('doubao-model-id');
+                if (input && input.value.trim()) return input.value.trim();
+                return localStorage.getItem('doubao_model_id') || '';
+            }
 
             window.clearChat = function() {
                 chatHistory = [];
@@ -396,7 +424,8 @@
                     doubao: {
                         url: 'https://ark.cn-beijing.volces.com/api/v3/chat/completions',
                         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
-                        body: { model: 'doubao-pro', messages, stream: false, max_tokens: 600, temperature: 0.85 }
+                        // 关键：豆包的 model 从输入框获取，不再硬编码
+                        body: { model: getDoubaoModelId() || 'doubao-lite', messages, stream: false, max_tokens: 600, temperature: 0.85 }
                     },
                     kimi: {
                         url: 'https://api.moonshot.cn/v1/chat/completions',
